@@ -5,7 +5,11 @@ assigning QC reason codes, used to train a machine learning model.
 
 ## Setup
 
+Requires Python 3 installed (`python3 --version` to check).
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
