@@ -9,14 +9,23 @@ assigning QC reason codes, used to train a machine learning model.
 pip install -r requirements.txt
 ```
 
+## Adding data
+
+Create a `raw/` folder next to `app.py` (if it doesn't already exist) and
+copy your raw flux export file(s) into it. Any filename works (e.g.
+`dt_flux_2024-07-07.csv`, `dt_flux_2024-07-08.csv`), and you can drop in
+multiple files at once — they're all loaded and combined automatically.
+Each file just needs the same columns as the existing exports.
+
 ## Running
 
 ```bash
 streamlit run app.py
 ```
 
-The app loads data from `./raw/dt_flux_2024-07-07.csv`, so run the command
-from this folder.
+This works from any directory — the app always looks for `raw/` and writes
+`output/` next to `app.py` itself, not wherever you happen to run the
+command from.
 
 ## Usage
 

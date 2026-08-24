@@ -5,15 +5,16 @@ CO2 / N2O / CH4 fits and chamber conditions, then assigns QC reason codes
 that will be used as training labels for a downstream ML model.
 """
 
-import os
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-DATA_PATH = "./raw/dt_flux_2024-07-07.csv"
-OUTPUT_DIR = "./output"
-OUTPUT_PATH = os.path.join(OUTPUT_DIR, "flux_labels.csv")
+APP_DIR = Path(__file__).resolve().parent
+RAW_DIR = APP_DIR / "raw"
+OUTPUT_DIR = APP_DIR / "output"
+OUTPUT_PATH = OUTPUT_DIR / "flux_labels.csv"
 
 REASON_CODES = [
     "PASS",
@@ -38,25 +39,50 @@ CONTEXT_COLS = [
     "VWC",
 ]
 
+REQUIRED_COLUMNS = sorted(set(CONTEXT_COLS + [
+    "t", "exclude",
+    "chi_co2", "chi_pred_co2", "f_co2", "r2_f_co2", "rmse_f_co2", "sigma_f_co2", "linear",
+    "chi_n2o", "chi_pred_n2o", "f_n2o", "r2_f_n2o", "rmse_f_n2o", "sigma_f_n2o",
+    "chi_ch4", "chi_pred_ch4", "f_ch4", "r2_f_ch4", "rmse_f_ch4", "sigma_f_ch4",
+    "TA", "T_cavity", "P_cavity",
+]))
+
 st.set_page_config(page_title="Flux QC Labelling", layout="wide")
 
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(DATA_PATH)
+    csv_paths = sorted(RAW_DIR.glob("*.csv"))
+    if not csv_paths:
+        st.error(
+            f"No CSV files found in {RAW_DIR}. Copy one or more raw flux export "
+            "files there (any filename) and rerun the app."
+        )
+        st.stop()
+
+    frames = []
+    for path in csv_paths:
+        chunk = pd.read_csv(path)
+        missing = [c for c in REQUIRED_COLUMNS if c not in chunk.columns]
+        if missing:
+            st.error(f"{path.name} is missing required column(s): {', '.join(missing)}")
+            st.stop()
+        frames.append(chunk)
+
+    df = pd.concat(frames, ignore_index=True)
     df = df.sort_values(["mmnt_id", "t"])
     return df
 
 
 def load_existing_labels():
-    if os.path.exists(OUTPUT_PATH):
+    if OUTPUT_PATH.exists():
         labels_df = pd.read_csv(OUTPUT_PATH, dtype=str).fillna("")
         return dict(zip(labels_df["mmnt_id"], labels_df["reason_codes"]))
     return {}
 
 
 def save_labels(labels: dict):
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_df = pd.DataFrame(
         [{"mmnt_id": mid, "reason_codes": codes} for mid, codes in labels.items()]
     )
