@@ -2,7 +2,6 @@
 __pycache__/
 *.pyc
 
-# Raw and derived flux data — kept local only, not versioned
+# Raw flux data — kept local only, not versioned
 raw/
 archive/
-output/
