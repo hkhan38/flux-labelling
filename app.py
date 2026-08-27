@@ -332,6 +332,16 @@ def save_current_label():
 if st.button("Save Label", type="primary", width='stretch', on_click=save_current_label):
     st.success(f"Saved label for {current_mmnt_id}")
 
+bottom_nav_col1, bottom_nav_col2 = st.columns(2)
+with bottom_nav_col1:
+    if st.button("Previous", disabled=(current_idx == 0), width='stretch', key="previous_bottom"):
+        st.session_state.current_idx = max(0, current_idx - 1)
+        st.rerun()
+with bottom_nav_col2:
+    if st.button("Next", disabled=(current_idx == n_total - 1), width='stretch', key="next_bottom"):
+        st.session_state.current_idx = min(n_total - 1, current_idx + 1)
+        st.rerun()
+
 st.download_button(
     "Download Labels (flux_labels.csv)",
     data=labels_to_csv_bytes(labels),
