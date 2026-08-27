@@ -3,18 +3,15 @@
 Elisabeth reviews each chamber closure measurement (mmnt_id), inspects the
 CO2 / N2O / CH4 fits and chamber conditions, then assigns QC reason codes
 that will be used as training labels for a downstream ML model.
-"""
 
-from pathlib import Path
+Runs as a hosted web app: the data file and any existing labels are
+uploaded by the user, and labels live only in session state - download the
+labels CSV regularly to avoid losing progress.
+"""
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-
-APP_DIR = Path(__file__).resolve().parent
-RAW_DIR = APP_DIR / "raw"
-OUTPUT_DIR = APP_DIR / "output"
-OUTPUT_PATH = OUTPUT_DIR / "flux_labels.csv"
 
 REASON_CODES = [
     "PASS",
@@ -50,43 +47,16 @@ REQUIRED_COLUMNS = sorted(set(CONTEXT_COLS + [
 st.set_page_config(page_title="Flux QC Labelling", layout="wide")
 
 
-@st.cache_data
-def load_data():
-    csv_paths = sorted(RAW_DIR.glob("*.csv"))
-    if not csv_paths:
-        st.error(
-            f"No CSV files found in {RAW_DIR}. Copy one or more raw flux export "
-            "files there (any filename) and rerun the app."
-        )
-        st.stop()
-
-    frames = []
-    for path in csv_paths:
-        chunk = pd.read_csv(path)
-        missing = [c for c in REQUIRED_COLUMNS if c not in chunk.columns]
-        if missing:
-            st.error(f"{path.name} is missing required column(s): {', '.join(missing)}")
-            st.stop()
-        frames.append(chunk)
-
-    df = pd.concat(frames, ignore_index=True)
-    df = df.sort_values(["mmnt_id", "t"])
-    return df
+def parse_labels_file(labels_file) -> dict:
+    labels_df = pd.read_csv(labels_file, dtype=str).fillna("")
+    return dict(zip(labels_df["mmnt_id"], labels_df["reason_codes"]))
 
 
-def load_existing_labels():
-    if OUTPUT_PATH.exists():
-        labels_df = pd.read_csv(OUTPUT_PATH, dtype=str).fillna("")
-        return dict(zip(labels_df["mmnt_id"], labels_df["reason_codes"]))
-    return {}
-
-
-def save_labels(labels: dict):
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+def labels_to_csv_bytes(labels: dict) -> bytes:
     out_df = pd.DataFrame(
         [{"mmnt_id": mid, "reason_codes": codes} for mid, codes in labels.items()]
     )
-    out_df.to_csv(OUTPUT_PATH, index=False)
+    return out_df.to_csv(index=False).encode("utf-8")
 
 
 def line_trace(x, y, name, color, dash=None):
@@ -96,12 +66,18 @@ def line_trace(x, y, name, color, dash=None):
     return go.Scatter(x=x, y=y, mode="lines", name=name, line=line)
 
 
-def init_state():
+def init_state(data_file, labels_file):
     if "df" not in st.session_state:
-        st.session_state.df = load_data()
-        st.session_state.mmnt_ids = sorted(st.session_state.df["mmnt_id"].unique())
+        df = pd.read_csv(data_file)
+        missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+        if missing:
+            st.error(f"Uploaded data file is missing required column(s): {', '.join(missing)}")
+            st.stop()
+        df = df.sort_values(["mmnt_id", "t"])
+        st.session_state.df = df
+        st.session_state.mmnt_ids = sorted(df["mmnt_id"].unique())
     if "labels" not in st.session_state:
-        st.session_state.labels = load_existing_labels()
+        st.session_state.labels = parse_labels_file(labels_file) if labels_file is not None else {}
     if "current_idx" not in st.session_state:
         st.session_state.current_idx = 0
 
@@ -118,7 +94,26 @@ def go_to_next_unlabelled():
     st.toast("All measurements are labelled!")
 
 
-init_state()
+st.title("Flux QC Labelling")
+
+st.warning(
+    "Remember to download your labels regularly to save progress. If you "
+    "close or refresh the browser, your labels will be lost unless downloaded."
+)
+
+upload_col1, upload_col2 = st.columns(2)
+with upload_col1:
+    data_file = st.file_uploader("Upload data file", type="csv", key="data_file")
+with upload_col2:
+    labels_file = st.file_uploader(
+        "Upload existing labels file (optional)", type="csv", key="labels_file"
+    )
+
+if data_file is None:
+    st.info("Upload a data file above to begin.")
+    st.stop()
+
+init_state(data_file, labels_file)
 
 df = st.session_state.df
 mmnt_ids = st.session_state.mmnt_ids
@@ -152,7 +147,6 @@ with st.sidebar:
 current_idx = st.session_state.current_idx
 current_mmnt_id = mmnt_ids[current_idx]
 
-st.title("Flux QC Labelling")
 st.subheader(f"Measurement {current_idx + 1} of {n_total}")
 st.progress((current_idx + 1) / n_total)
 
@@ -169,6 +163,16 @@ with nav_col3:
     if st.button("Skip to next unlabelled", width='stretch'):
         go_to_next_unlabelled()
         st.rerun()
+
+st.download_button(
+    "Download Labels (flux_labels.csv)",
+    data=labels_to_csv_bytes(labels),
+    file_name="flux_labels.csv",
+    mime="text/csv",
+    type="primary",
+    width='stretch',
+    key="download_labels_top",
+)
 
 st.divider()
 
@@ -311,15 +315,29 @@ st.header("Labelling")
 
 existing_codes_str = labels.get(current_mmnt_id, "")
 existing_codes = existing_codes_str.split("|") if existing_codes_str else []
+reason_codes_key = f"reason_codes_{current_mmnt_id}"
 
 selected_codes = st.multiselect(
     "Reason codes (select PASS if this measurement is clean)",
     options=REASON_CODES,
     default=existing_codes,
-    key=f"reason_codes_{current_mmnt_id}",
+    key=reason_codes_key,
 )
 
-if st.button("Save Label", type="primary", width='stretch'):
-    labels[current_mmnt_id] = "|".join(selected_codes)
-    save_labels(labels)
+
+def save_current_label():
+    st.session_state.labels[current_mmnt_id] = "|".join(st.session_state[reason_codes_key])
+
+
+if st.button("Save Label", type="primary", width='stretch', on_click=save_current_label):
     st.success(f"Saved label for {current_mmnt_id}")
+
+st.download_button(
+    "Download Labels (flux_labels.csv)",
+    data=labels_to_csv_bytes(labels),
+    file_name="flux_labels.csv",
+    mime="text/csv",
+    type="primary",
+    width='stretch',
+    key="download_labels_bottom",
+)
