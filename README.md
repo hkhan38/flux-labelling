@@ -13,31 +13,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Adding data
-
-Create a `raw/` folder next to `app.py` (if it doesn't already exist) and
-copy your raw flux export file(s) into it. Any filename works (e.g.
-`dt_flux_2024-07-07.csv`, `dt_flux_2024-07-08.csv`), and you can drop in
-multiple files at once — they're all loaded and combined automatically.
-Each file just needs the same columns as the existing exports.
-
 ## Running
 
 ```bash
 streamlit run app.py
 ```
 
-This works from any directory — the app always looks for `raw/` and writes
-`output/` next to `app.py` itself, not wherever you happen to run the
-command from.
-
 ## Usage
 
+- Upload your raw flux export CSV under **Upload data file** to begin. If
+  you've labelled some of this data before, also upload the
+  `flux_labels.csv` you previously downloaded under **Upload existing
+  labels file** to pick up where you left off.
 - Use **Previous** / **Next** to move between measurements, or **Skip to
   next unlabelled** to jump ahead.
 - Inspect the CO2, N2O/CH4, and chamber condition charts for each
   measurement.
 - Select any applicable reason codes (select **PASS** if the measurement
   looks clean) and click **Save Label**.
-- Labels are written to `./output/flux_labels.csv` and are reloaded
-  automatically the next time the app starts, so progress is never lost.
+- Labels are kept in the browser session only — nothing is saved to disk.
+  Click **Download Labels** regularly to save your progress as
+  `flux_labels.csv`; if you close or refresh the browser without
+  downloading, unsaved labels are lost.
